@@ -1,0 +1,57 @@
+name: Scheduled Task
+
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Execute worker
+        env:
+          AUTH_TOKEN: ${{ secrets.AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        run: python main.py
+
+      - name: Sync data
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No state changes."
+          else
+            git commit --amend -m "init"
+            git push --force
+          fi
+
+      - name: Prune run logs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=20" | \
+            jq -r '.workflow_runs[] | select(.id != ${{ github.run_id }}) | .id')
+          for r in $RUNS; do
+            curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/runs/$r"
+          done
+
