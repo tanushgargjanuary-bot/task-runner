@@ -1,6 +1,9 @@
 token.json
 *.key
 *.env
+.env
+.env.*
+!.env.example
 __pycache__/
 *.pyc
 *.mp4
